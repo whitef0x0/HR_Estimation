@@ -4,6 +4,7 @@ import dlib
 from imutils import face_utils
 import imutils
 
+import skin_detector
 
 class FaceDetection(object):
     def __init__(self):
@@ -11,7 +12,7 @@ class FaceDetection(object):
         self.predictor = dlib.shape_predictor("shape_predictor_68_face_landmarks.dat")
         self.fa = face_utils.FaceAligner(self.predictor, desiredFaceWidth=256)
 
-    def face_detect(self, frame):
+    def face_detect(self, frame, use_skin_detector=False):
         #frame = imutils.resize(frame, width=400)
         face_frame = np.zeros((10, 10, 3), np.uint8)
         mask = np.zeros((10, 10, 3), np.uint8)
@@ -26,7 +27,6 @@ class FaceDetection(object):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         # detect faces in the grayscale image
         rects = self.detector(gray, 0)
-        
 
         # loop over the face detections
         #for (i, rect) in enumerate(rects): 
@@ -34,14 +34,14 @@ class FaceDetection(object):
             # convert the facial landmark (x, y)-coordinates to a NumPy
             # array
             
-        #assumpion: only 1 face is detected
+        #Assume only one face in frame
         if len(rects)>0:
             status = True
             # shape = self.predictor(gray, rects[0])
             # shape = face_utils.shape_to_np(shape)
 
-                # convert dlib's rectangle to a OpenCV-style bounding box
-                # [i.e., (x, y, w, h)], then draw the face bounding box
+            # convert dlib's rectangle to a OpenCV-style bounding box
+            # [i.e., (x, y, w, h)], then draw the face bounding box
             (x, y, w, h) = face_utils.rect_to_bb(rects[0])
             #cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 1)
             if y<0:
@@ -69,12 +69,8 @@ class FaceDetection(object):
                 shape = self.predictor(grayf, rectsf[0])
                 shape = face_utils.shape_to_np(shape)
                 
-                # for (a, b) in shape:
-                #     cv2.circle(face_frame, (a, b), 1, (0, 0, 255), -1) #draw facial landmarks
-                
-                # #draw rectangle on chin
-                # cv2.rectangle(face_frame, (shape[58][0], shape[57][1]), 
-                #         (shape[56][0], shape[5][1]), (0,255,0), 0)
+                for (a, b) in shape:
+                    cv2.circle(face_frame, (a, b), 1, (0, 0, 255), -1) #draw facial landmarks;
 
                 cv2.rectangle(face_frame,(shape[54][0], shape[29][1]), #draw rectangle on right and left cheeks
                         (shape[12][0],shape[33][1]), (0,255,0), 0)
@@ -85,11 +81,7 @@ class FaceDetection(object):
                         shape[54][0]:shape[12][0]]
                         
                 ROI2 = face_frame[shape[29][1]:shape[33][1], #left cheek
-                        shape[4][0]:shape[48][0]]    
-
-                ROI3 = face_frame[shape[57][1]:shape[5][1], #chin
-                        shape[58][0]:shape[56][0]]    
-
+                        shape[4][0]:shape[48][0]]      
                 
                 #get the shape of face for color amplification
                 rshape = np.zeros_like(shape) 
@@ -97,29 +89,24 @@ class FaceDetection(object):
                 mask = np.zeros((face_frame.shape[0], face_frame.shape[1]))
             
                 cv2.fillConvexPoly(mask, rshape[0:27], 1) 
-                # mask = np.zeros((face_frame.shape[0], face_frame.shape[1],3),np.uint8)
-                # cv2.fillConvexPoly(mask, shape, 1)
-                
-            # cv2.imshow("face align", face_frame)
-            # cv2.waitKey()
-            
-            # cv2.rectangle(frame,(shape[54][0], shape[29][1]), #draw rectangle on right and left cheeks
-                    # (shape[12][0],shape[54][1]), (0,255,0), 0)
-            # cv2.rectangle(frame, (shape[4][0], shape[29][1]), 
-                    # (shape[48][0],shape[48][1]), (0,255,0), 0)
-            
-            # ROI1 = frame[shape[29][1]:shape[54][1], #right cheek
-                    # shape[54][0]:shape[12][0]]
-                    
-            # ROI2 =  frame[shape[29][1]:shape[54][1], #left cheek
-                    # shape[4][0]:shape[48][0]]   
                 
         else:
             cv2.putText(frame, "No face detected",
                        (200,200), cv2.FONT_HERSHEY_PLAIN, 1.5, (0, 0, 255),2)
             status = False
-        return frame, face_frame, ROI1, ROI2, ROI3, status, mask    
-    
+
+        if use_skin_detector:
+            #Calculate mean value of pixels in ROI1
+            roi1_mean = self.calculate_mean_from_roi(ROI1)
+            roi2_mean = self.calculate_mean_from_roi(ROI2)
+            return frame, face_frame, ROI1, ROI2, roi1_mean, roi2_mean, status, mask    
+        else:
+            return frame, face_frame, ROI1, ROI2, status, mask    
+
+    def calculate_mean_from_roi(self, ROI):
+        mean = cv2.mean(ROI)
+        return [mean[0], mean[1], mean[2]]
+
     # some points in the facial landmarks need to be re-ordered
     def face_remap(self,shape):
         remapped_image = shape.copy()

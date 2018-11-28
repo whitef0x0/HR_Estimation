@@ -43,7 +43,7 @@ class Video(object):
                 # print(time.time()-self.t0)
                 return
             else:    
-                frame = cv2.resize(frame,(640,480))
+                frame = frame #cv2.resize(frame,(640,480))
         else:
             frame = np.ones((480,640,3), dtype=np.uint8)
             col = (0,256,256)

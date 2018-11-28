@@ -34,7 +34,7 @@ class TestPPG():
 
         input_array = []
 
-        self.video_files = ["p13_normal.MP4", "p13_physical.MP4", "p14_normal.MP4", "p14_physical.MP4", "p15_normal.MP4", "p15_physical.MP4"]
+        self.video_files = ["p10_normal.MP4", "p13_normal.MP4", "p13_normal.MP4", "p13_physical.MP4", "p14_normal.MP4", "p14_physical.MP4", "p15_normal.MP4", "p15_physical.MP4"]
 
         for video_file in self.video_files:
             video_filepath = os.path.join(self.video_filefolder, video_file)
@@ -72,7 +72,7 @@ class TestPPG():
     def run_dataset(self):
         for input_obj in self.input_array:
             self.input = input_obj.get('input')
-            self.process = Process(True, 25.0)
+            self.process = Process(True, 25)
             self.process.reset()
             self.status = False
             self.frame = np.zeros((10,10,3),np.uint8)
@@ -84,10 +84,9 @@ class TestPPG():
             while self.input.finished == False:
                 self.main_loop()
 
-            #input_obj['hr_measured'] = np.average(self.bpms)
-            input_obj['hr_measured'] = np.mean(self.bpms)
+            input_obj['hr_measured'] = np.mean(self.process.bpms)
             input_obj['error'] = get_change(input_obj['hr_measured'], input_obj['hr_groundtruth'])
-            print("video is: " + input_obj['label'])
+            print("\n\nvideo is: " + input_obj['label'])
             print("hr_actual: " + str(input_obj['hr_groundtruth']))
             print("hr_measured: " + str(input_obj['hr_measured']))
             print("error: " + str(input_obj['error']) + "%")
@@ -98,10 +97,11 @@ class TestPPG():
 
         if frame is not None:
             self.process.frame_in = frame
-            # self.process.run_offline()
-            self.process.run_offline_jade()
+            # self.process.run_offline_1()
+            self.process.run_offline_2()
+            # self.process.run_offline_jade()
 
-            cv2.imshow("Processed", frame)
+            # cv2.imshow("Processed", frame)
             
             self.frame = self.process.frame_out #get the frame to show in GUI
             self.f_fr = self.process.frame_ROI #get the face to show in GUI
@@ -109,12 +109,9 @@ class TestPPG():
             
             self.frame = cv2.cvtColor(self.frame, cv2.COLOR_RGB2BGR)
             
-            if self.process.bpms.__len__() > 50:
-                # if(max(self.process.bpms-np.mean(self.process.bpms))<5): #show HR if it is stable -the change is not over 5 bpm- for 3s
-                # print("Heart rate: " + str(float("{:.2f}".format(np.mean(self.process.bpms)))) + " bpm")
-                self.bpms.append(np.mean(self.process.bpms))
-            #We need to open a cv2.imshow() window to handle a pause 
-            #self.make_bpm_plot()
+            # if self.process.bpms.__len__() > 3:
+            #     if(max(self.process.bpms[-3:]-np.mean(self.process.bpms[-3]))<5): #show HR if it is stable -the change is not over 5 bpm- for 3s
+            #         print("Heart rate: " + str(float("{:.2f}".format(np.mean(self.process.bpms)))) + " bpm")
         
 if __name__ == '__main__':
     #dataset_location = sys.argv[1] 
