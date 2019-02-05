@@ -20,10 +20,12 @@ class FaceDetection(object):
         ROI2 = np.zeros((10, 10, 3), np.uint8)
         ROI3 = np.zeros((10, 10, 3), np.uint8)
         status = False
-        
+        roi1_mean = 0
+        roi2_mean = 0
+
         if frame is None:
-            return 
-            
+            return frame, face_frame, ROI1, ROI2, roi1_mean, roi2_mean, status, mask    
+
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         # detect faces in the grayscale image
         rects = self.detector(gray, 0)
@@ -43,17 +45,21 @@ class FaceDetection(object):
             # convert dlib's rectangle to a OpenCV-style bounding box
             # [i.e., (x, y, w, h)], then draw the face bounding box
             (x, y, w, h) = face_utils.rect_to_bb(rects[0])
-            #cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 1)
             if y<0:
                 print("a")
-                return frame, face_frame, ROI1, ROI2, status, mask
-            #if i==0:
-            face_frame = frame[y:y+h,x:x+w]
-                # show the face number
-                #cv2.putText(frame, "Face #{}".format(i + 1), (x - 10, y - 10),
-                #    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-                # loop over the (x, y)-coordinates for the facial landmarks
-                # and draw them on the image
+                return frame, face_frame, ROI1, ROI2, roi1_mean, roi2_mean, status, mask
+            
+            frame_copy = np.copy(frame)
+            face_frame = frame_copy[y:y+h,x:x+w]
+
+            #Draw bounding box around face
+            cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 0, 255), 1)
+
+            # show the face number
+            #cv2.putText(frame, "Face #{}".format(i + 1), (x - 10, y - 10),
+            #    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            # loop over the (x, y)-coordinates for the facial landmarks
+            # and draw them on the image
                 
             # for (x, y) in shape:
                 # cv2.circle(frame, (x, y), 1, (0, 0, 255), -1) #draw facial landmarks
@@ -92,16 +98,16 @@ class FaceDetection(object):
                 
         else:
             cv2.putText(frame, "No face detected",
-                       (200,200), cv2.FONT_HERSHEY_PLAIN, 1.5, (0, 0, 255),2)
+                       (500,360), cv2.FONT_HERSHEY_PLAIN, 1.5, (255, 255, 0),2)
             status = False
 
-        if use_skin_detector:
+
+        if use_skin_detector and status is True:
             #Calculate mean value of pixels in ROI1
             roi1_mean = self.calculate_mean_from_roi(ROI1)
             roi2_mean = self.calculate_mean_from_roi(ROI2)
-            return frame, face_frame, ROI1, ROI2, roi1_mean, roi2_mean, status, mask    
-        else:
-            return frame, face_frame, ROI1, ROI2, status, mask    
+
+        return frame, face_frame, ROI1, ROI2, roi1_mean, roi2_mean, status, mask    
 
     def calculate_mean_from_roi(self, ROI):
         mean = cv2.mean(ROI)

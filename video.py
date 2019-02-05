@@ -51,6 +51,9 @@ class Video(object):
                        (65,220), cv2.FONT_HERSHEY_PLAIN, 2, col)
         return frame
         
+    def get_fps(self):
+        return self.cap.get(cv2.CAP_PROP_FPS)
+
         
         
         

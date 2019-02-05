@@ -33,12 +33,8 @@ This guide assumes you have homebrew and python3 installed
 		```
 3. Install pip modules
 `pip3 install -r requirements.txt`
-4. Install PyQt4
-`python -m pip install PyQt4`
-5. Start program
-`python GUI.py`
-	- In case of plotting graphs, run "graph_plot.py" 
-	- For the Eulerian Video Magnification implementation, run "amplify_color.py"
+4. Start program
+`python run_method.py`
 
 # Quickstart
 

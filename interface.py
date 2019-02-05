@@ -124,27 +124,29 @@ def peakdet(v, delta, x = None):
 def plotXY(data,size = (480,640),margin = 25,name = "data",labels=[], skip = [],
            showmax = [], bg = None,label_ndigits = [], showmax_digits=[]):
     
+
     #----------
-    mix = []
-    maxtab, mintab = peakdet(data[0][1], 0.3) #this delta is found by testing 
-    #maxtab[0] contains the index of max value, maxtab[1] contains the max values
-    if(len(maxtab)>0 and len(mintab)>0):
-        mix = np.append(maxtab[...,0],mintab[...,0])
-        mix = np.sort(mix)
-        mix = mix.astype(int)
+    # mix = []
+    # maxtab, mintab = peakdet(data[0][1], 0.3) #this delta is found by testing 
+    # #maxtab[0] contains the index of max value, maxtab[1] contains the max values
+    # if(len(maxtab)>0 and len(mintab)>0):
+    #     mix = np.append(maxtab[...,0],mintab[...,0])
+    #     mix = np.sort(mix)
+    #     mix = mix.astype(int)
 
     #-----------
+
     
     for x,y in data:
         if len(x) < 2 or len(y) < 2:
             return
-    
+
     n_plots = len(data)
     w = float(size[1])
     h = size[0]/float(n_plots)
     
-    z = np.zeros((size[0],size[1],3))
-    
+    z = np.zeros((480,640,3), np.uint8)
+
     if isinstance(bg,np.ndarray):
         wd = int(bg.shape[1]/bg.shape[0]*h )
         bg = cv2.resize(bg,(wd,int(h)))
@@ -175,7 +177,7 @@ def plotXY(data,size = (480,640),margin = 25,name = "data",labels=[], skip = [],
                         col2 = (255,0,0)
                         ss = '{0:.%sf}' % label_ndigits[i]
                         ss = ss.format(x[ii])
-                        cv2.putText(z,ss,(int(xx[ii]),int((i+1)*h)),
+                        cv2.putText(z,ss * 60,(int(xx[ii]),int((i+1)*h)),
                                     cv2.FONT_HERSHEY_PLAIN,1,col)           
         if showmax:
             if showmax[i]:
@@ -184,7 +186,7 @@ def plotXY(data,size = (480,640),margin = 25,name = "data",labels=[], skip = [],
                 ss = '{0:.%sf} %s' % (showmax_digits[i], showmax[i])
                 ss = ss.format(x[ii]) 
                 #"%0.0f %s" % (x[ii], showmax[i])
-                cv2.putText(z,ss,(int(xx[ii]),int((yy[ii]))),
+                cv2.putText(z,ss * 60,(int(xx[ii]),int((yy[ii]))),
                             cv2.FONT_HERSHEY_PLAIN,2,col)
        
         try:
@@ -203,21 +205,21 @@ def plotXY(data,size = (480,640),margin = 25,name = "data",labels=[], skip = [],
         m = []
         for i in range(len(p)-1):
             cv2.line(z,tuple(p[i]),tuple(p[i+1]), (255,255,255),1)
-            #draw the max and min points
-            # if len(maxtab>0) and i in maxtab[:,0]:
-                # cv2.circle(z,tuple(p[i]), 5, (255, 255, 0), -1)
-            # if len(mintab>0) and i in mintab[:,0]:
-                # cv2.circle(z,tuple(p[i]), 5, (0, 0, 255), -1)
+            # draw the max and min points
+    #         if len(maxtab>0) and i in maxtab[:,0]:
+    #             cv2.circle(z,tuple(p[i]), 5, (255, 255, 0), -1)
+    #         if len(mintab>0) and i in mintab[:,0]:
+    #             cv2.circle(z,tuple(p[i]), 5, (0, 0, 255), -1)
             
-            # if i in mix:
-                # m.append(p[i])
-            # for ii in range(len(m)-1):
-                # cv2.line(z, tuple(m[ii]), tuple(m[ii+1]),(255,255,255),1)
+    #         if i in mix:
+    #             m.append(p[i])
+    #         for ii in range(len(m)-1):
+    #             cv2.line(z, tuple(m[ii]), tuple(m[ii+1]),(255,255,255),1)
     
     # for p in P[mix]:
-        # for i in range(len(mix)-1):
-            # cv2.line(z, tuple(p[i]), tuple(p[i+1]),(255,255,255),5)
-                
-    cv2.imshow(name,z)
+    #     for i in range(len(mix)-1):
+    #         cv2.line(z, tuple(p[i]), tuple(p[i+1]),(255,255,255),5)
+              
+    return z
     
     

@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 from scipy import fftpack
 
 class Process(object):
-    def __init__(self, using_video, video_fps):
+    def __init__(self, using_video, video_fps=25):
         self.using_video = using_video
         if using_video:
             self.fps = video_fps
@@ -32,12 +32,8 @@ class Process(object):
         self.frame_in = np.zeros((10, 10, 3), np.uint8)
         self.frame_ROI = np.zeros((10, 10, 3), np.uint8)
         self.frame_out = np.zeros((10, 10, 3), np.uint8)
-        self.samples = {
-            "processed": [],
-            "raw_fft": [],
-            "unprocessed": []
-        }
-        self.buffer_size = 400
+        self.samples = []
+        self.buffer_size = 100
         self.times = [] 
         self.data_buffer = []
 
@@ -141,7 +137,7 @@ class Process(object):
             self.bpms.append(self.bpm)
         
             processed = self.butter_bandpass_filter(processed,0.8,3,self.fps,order=3)
-        self.samples["processed"] = processed
+        self.samples = processed
 
     def run_offline_1(self):
         frame, face_frame, ROI1, ROI2, status, mask = self.fd.face_detect(self.frame_in)
@@ -243,6 +239,96 @@ class Process(object):
 
             processed = self.butter_bandpass_filter(processed, 0.8, 3, self.fps, order=3)
 
+    def run_online_1(self):
+        frame, face_frame, ROI1, ROI2, roi1_mean, roi2_mean, status, mask = self.fd.face_detect(self.frame_in)
+        
+        if status is False:
+            print("No face detected")
+            self.no_face = True
+            self.reset()
+        else:
+            self.no_face = False
+            self.times.append(time.time() - self.t0)
+
+            self.frame_out = frame
+            self.frame_ROI = face_frame
+
+            # cv2.imshow("face align", frame)
+            # cv2.waitKey()
+            
+            g1 = self.extractGreenColor(ROI1)
+            g2 = self.extractGreenColor(ROI2)
+            
+            L = len(self.data_buffer)
+            
+            chin1_width = ROI1.shape[1]
+            chin2_width = ROI2.shape[1]
+            total_cheek_width = chin1_width + chin2_width
+            # print("chin1_width: " + str(chin1_width))
+            # print("chin2_width: " + str(chin2_width))
+
+            if chin1_width / total_cheek_width >= 0.6:
+                g = g1
+            elif chin2_width / total_cheek_width >= 0.6:
+                g = g2
+            else:
+                g = (g1+g2)/2
+            
+            #remove sudden change, if the avg value change is over 10, use the mean of the data_buffer
+            if(abs(g-np.mean(self.data_buffer))>10 and L>(self.buffer_size-1)): 
+                g = self.data_buffer[-1]
+            
+            self.data_buffer.append(g)
+
+            #only process in a fixed-size buffer
+            if L > self.buffer_size:
+                self.data_buffer = self.data_buffer[-self.buffer_size:]
+                self.times = self.times[-self.buffer_size:]
+                self.bpms = self.bpms[-self.buffer_size//2:]
+                L = self.buffer_size
+                
+            processed = np.array(self.data_buffer)
+            
+            if L > 90:
+                #calculate HR using a true fps of processor of the computer, not the fps the camera provide
+                self.fps = float(L) / (self.times[-1] - self.times[0])
+                #print("self.fps: " + str(self.fps));
+                even_times = np.linspace(self.times[0], self.times[-1], L)
+                
+                processed = signal.detrend(processed)#detrend the signal to avoid interference of light change
+                interpolated = np.interp(even_times, self.times, processed) #interpolation by 1
+                interpolated = np.hamming(L) * interpolated#make the signal become more periodic (advoid spectral leakage)
+                #norm = (interpolated - np.mean(interpolated))/np.std(interpolated)#normalization
+                norm = interpolated/np.linalg.norm(interpolated)
+                raw = np.fft.rfft(norm*30)#do real fft with the normalization multiplied by 10
+                
+                self.freqs = float(self.fps) / L * np.arange(L / 2 + 1)
+                freqs = 60. * self.freqs
+                
+                # idx_remove = np.where((freqs < 50) & (freqs > 180))
+                # raw[idx_remove] = 0
+                
+                self.fft = np.abs(raw)**2#get amplitude spectrum
+            
+                idx = np.where((freqs > 50) & (freqs < 180))#the range of frequency that HR is supposed to be within 
+                #print(idx);
+                pruned = self.fft[idx]
+                pfreq = freqs[idx]
+                
+                self.freqs = pfreq 
+                self.fft = pruned
+                
+                idx2 = np.argmax(pruned)#max in the range can be HR
+                
+                self.bpm = self.freqs[idx2]
+                self.bpms.append(self.bpm)
+                
+                
+                # processed = self.butter_bandpass_filter(processed,0.8,3,self.fps,order = 3)
+                #ifft = np.fft.irfft(raw)
+            self.samples = processed # multiply the signal with 5 for easier to see in the plot
+            #TODO: find peaks to draw HR-like signal.
+
     #Implementation of Gaussian Smoothing Filter for 1D Array
     #Taken from https://scipy-cookbook.readthedocs.io/items/SignalSmooth.html
     def smooth(self, x,window_len=11,window='hanning'):
@@ -329,7 +415,7 @@ class Process(object):
     def calculate_new_freq(self, raw_fft, freqs):
         bpm_std = np.std(self.peak_freqs)
         bpm_mean = np.mean(self.peak_freqs)
-        std_0 = 0.1
+        std_0 = 0.05
 
         Fw_old = raw_fft
         Fw_new = []
@@ -388,21 +474,23 @@ class Process(object):
         
         # start calculating after the first 100 frames
         if L > 200:  
-            processed = self.calculate_skin_features(self.data_buffer_roi_mean)
+            # processed = np.array(self.calculate_skin_features(self.data_buffer_roi_mean))
 
-            data_graph = Graph("Data Graph", 4)
-            data_graph.addSubPlot(title="Signal vs Frames", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(processed)), y_data=processed)
+            # np.savetxt("hr_graph.csv", np.dstack((np.arange(1, processed.size+1), processed))[0],"%d,%f",header="Id,Values")
+
+            # data_graph = Graph("Data Graph", 4)
+            # data_graph.addSubPlot(title="Signal vs Frames", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(processed)), y_data=processed)
 
             processed = self.smooth(np.array(processed), window_len=5, window='hamming')
-            data_graph.addSubPlot(title="Signal vs Frames (Gaussian Filter)", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(processed)), y_data=processed)
+            # data_graph.addSubPlot(title="Signal vs Frames (Gaussian Filter)", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(processed)), y_data=processed)
 
             #detrend the signal to avoid interference of light change
-            detrended = signal.detrend(processed)
-            data_graph.addSubPlot(title="Signal vs Frames (Detrended)", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(detrended)), y_data=detrended)
+            # detrended = signal.detrend(processed)
+            # data_graph.addSubPlot(title="Signal vs Frames (Detrended)", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(detrended)), y_data=detrended)
 
             #Normalize Data
-            normalized = detrended/np.linalg.norm(detrended)
-            data_graph.addSubPlot(title="Signal vs Frames (Normalized)", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(normalized)), y_data=normalized)
+            normalized = detrended/np.linalg.norm(processed)
+            # data_graph.addSubPlot(title="Signal vs Frames (Normalized)", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(normalized)), y_data=normalized)
             # plt.show()
 
             #FFT of the signal
@@ -430,20 +518,128 @@ class Process(object):
 
             peak_freq = freqs[power[pos_mask].argmax()]
 
-            if len(self.bpms) > 0:
-                fft_graph = Graph("FFT Graph", 2)
-                fft_graph.addSubPlot(title="Original FFT", y_axis_title="Power", x_axis_title="Frequency [Hz]", x_data=sample_freq[pos_mask], y_data=old_power[pos_mask])
+            # if len(self.bpms) > 0:
+                # fft_graph = Graph("FFT Graph", 2)
+                # fft_graph.addSubPlot(title="Original FFT", y_axis_title="Power", x_axis_title="Frequency [Hz]", x_data=sample_freq[pos_mask], y_data=old_power[pos_mask])
 
-                fft_graph.addSubPlot(title="Modified FFT", y_axis_title="Power", x_axis_title="Frequency [Hz]", x_data=sample_freq[pos_mask], y_data=power[pos_mask])
-                plt.show()
-                cv2.waitKey()
+                # fft_graph.addSubPlot(title="Modified FFT", y_axis_title="Power", x_axis_title="Frequency [Hz]", x_data=sample_freq[pos_mask], y_data=power[pos_mask])
+                # plt.show()
+                # cv2.waitKey()
 
 
             self.bpm = peak_freq * 60
-            print("\nbpm: " + str(self.bpm))
+            # print("\nbpm: " + str(self.bpm))
             self.bpms.append(self.bpm)
             self.peak_freqs.append(peak_freq)
-             
+
+    def run_online_2(self):
+        frame, face_frame, ROI1, ROI2, roi1_mean, roi2_mean, status, mask = self.fd.face_detect(self.frame_in, use_skin_detector=True)
+        
+        self.frame_ROI = face_frame
+        if status is False:
+            print("No face detected")
+            self.no_face = True
+            self.reset()
+        else:
+            self.times.append(time.time() - self.t0)
+            self.no_face = False
+            self.frame_out = frame
+            
+            L = len(self.data_buffer_roi_mean[0])
+
+            chin1_width = ROI1.shape[1]
+            chin2_width = ROI2.shape[1]
+            total_cheek_width = chin1_width + chin2_width
+
+            current_mean = [0, 0, 0]
+            for i in range(3):
+                if chin1_width / total_cheek_width >= 0.6:
+                    current_mean[i] = roi1_mean[i]
+                elif chin2_width / total_cheek_width >= 0.6:
+                    current_mean[i] = roi2_mean[i]
+                else:
+                    current_mean[i] = (roi1_mean[i] + roi2_mean[i])/2
+            
+            for i in range(3):
+                self.data_buffer_roi_mean[i].append(current_mean[i])
+
+            #only process in a fixed-size buffer
+            if L > self.buffer_size:
+                for i in range(3):
+                    self.data_buffer_roi_mean[i] = self.data_buffer_roi_mean[i][-self.buffer_size:]
+                self.times = self.times[-self.buffer_size:]
+                self.bpms = self.bpms[-self.buffer_size//2:]
+                L = self.buffer_size
+            processed = self.calculate_skin_features(self.data_buffer_roi_mean)
+            
+            # start calculating after the first 100 frames
+            if L > 10:  
+                self.fps = float(L) / (self.times[-1] - self.times[0])
+                even_times = np.linspace(self.times[0], self.times[-1], L)
+                
+                #Apply one-dimensional linear interpolation to data
+                processed = np.interp(even_times, self.times, processed)
+
+
+                # data_graph = Graph("Data Graph", 4)
+                # data_graph.addSubPlot(title="Signal vs Frames", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(processed)), y_data=processed)
+
+                # processed = self.smooth(np.array(processed), window_len=10, window='hamming')
+                # data_graph.addSubPlot(title="Signal vs Frames (Gaussian Filter)", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(processed)), y_data=processed)
+
+                #Detrend the signal to avoid interference of light change
+                detrended = signal.detrend(processed)
+                # data_graph.addSubPlot(title="Signal vs Frames (Detrended)", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(detrended)), y_data=detrended)
+
+                #Normalize Data
+                normalized = detrended/np.linalg.norm(detrended)
+                # data_graph.addSubPlot(title="Signal vs Frames (Normalized)", x_axis_title="Frames", y_axis_title="Signal", x_data=range(len(normalized)), y_data=normalized)
+                # plt.show()
+
+                #FFT of the signal
+                sig_fft = fftpack.fft(normalized)
+                
+                #Power of the signal
+                power = np.abs(sig_fft)
+
+                #Corresponding frequencies
+                sample_freq = fftpack.fftfreq(normalized.size, d=(1/self.fps))
+
+                old_power = []
+                if len(self.bpms) > 0:
+                    old_power = power
+                    power = np.array(self.calculate_new_freq(power, sample_freq))
+
+                # Find the peak frequency: we can focus on only the positive frequencies
+                pos_mask = np.where((sample_freq > 1) & (sample_freq < 4))
+                freqs = sample_freq[pos_mask]
+                self.fft = power[pos_mask]
+                self.freqs = freqs
+
+                # print("\n\n")
+                # print(power)
+                # print(pos_mask)
+                # print(freqs)
+
+                peak_freq = freqs[power[pos_mask].argmax()]
+
+                # if len(self.bpms) > 0:
+                    # fft_graph = Graph("FFT Graph", 2)
+                    # fft_graph.addSubPlot(title="Original FFT", y_axis_title="Power", x_axis_title="Frequency [Hz]", x_data=sample_freq[pos_mask], y_data=old_power[pos_mask])
+
+                    # fft_graph.addSubPlot(title="Modified FFT", y_axis_title="Power", x_axis_title="Frequency [Hz]", x_data=sample_freq[pos_mask], y_data=power[pos_mask])
+                    # plt.show()
+                    # cv2.waitKey()
+
+
+                self.bpm = peak_freq * 60
+                self.bpms.append(self.bpm)
+                self.peak_freqs.append(peak_freq)
+            else:
+                cv2.putText(frame, "Initializing. Please wait.",
+                       (500,360), cv2.FONT_HERSHEY_PLAIN, 1.5, (255, 255, 0),2)
+            self.samples = processed
+
     def extractFrequency(self, L, fftArray, framerate):
         timestep = 1/framerate
 

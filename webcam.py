@@ -7,6 +7,7 @@ class Webcam(object):
         #print ("WebCamEngine init")
         self.dirname = "" #for nothing, just to make 2 inputs the same
         self.cap = None
+        self.valid = False
     
     def start(self):
         print("[INFO] Start webcam")
@@ -33,6 +34,9 @@ class Webcam(object):
             cv2.putText(frame, "(Error: Camera not accessible)",
                        (65,220), cv2.FONT_HERSHEY_PLAIN, 2, col)
         return frame
+
+    def get_fps(self):
+        return self.cap.get(cv2.CAP_PROP_FPS)
 
     def stop(self):
         if self.cap is not None:
